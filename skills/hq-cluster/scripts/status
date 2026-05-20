@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# status -- pretty queue & worker overview.
+#
+# Usage:
+#   status         (table for humans)
+#   status --json  (raw JSON, for downstream parsing)
+set -euo pipefail
+
+if [[ "${1:-}" == "--json" ]]; then
+  hq jobs --output-mode=json
+  exit 0
+fi
+
+# Workers
+echo "WORKERS"
+hq worker list --output-mode=json 2>/dev/null \
+  | jq -r '.[] | "  \(.configuration.hostname)  id=\(.id)  state=\(.ended.[0].reason // "RUNNING")"' \
+  || echo "  (no workers reachable)"
+echo
+
+# Jobs
+echo "JOBS (last 20)"
+JOBS=$(hq jobs --output-mode=json 2>/dev/null | jq '. | sort_by(-.id) | .[:20]')
+if [[ -z "$JOBS" || "$JOBS" == "[]" ]]; then
+  echo "  (none)"
+else
+  echo "$JOBS" | jq -r '.[] | "  #\(.id)  \(.info.state // .state)  \(.name // "(unnamed)")"'
+fi
+echo
+
+# Counts
+echo "SUMMARY"
+hq jobs --output-mode=json 2>/dev/null \
+  | jq -r '"  queued: \([.[] | select(.info.state == "WAITING")] | length)   running: \([.[] | select(.info.state == "RUNNING")] | length)   done: \([.[] | select(.info.state == "FINISHED")] | length)   failed: \([.[] | select(.info.state == "FAILED")] | length)"'

@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# log -- print stdout (+stderr) of a job. SCPs the file back from the worker.
+#
+# Usage:
+#   log <id>            # full stdout (+stderr if non-empty)
+#   log <id> stderr     # stderr only
+set -euo pipefail
+
+JID="${1:-}"
+STREAM="${2:-stdout}"
+[[ -z "$JID" ]] && { echo "usage: log <job_id> [stdout|stderr]" >&2; exit 64; }
+
+# Job → worker id → hostname → ssh alias.
+WORKER_ID=$(hq job info "$JID" --output-mode=json 2>/dev/null | jq -r '.[0].tasks[0].worker // empty')
+if [[ -z "$WORKER_ID" || "$WORKER_ID" == "null" ]]; then
+  echo "job $JID has no assigned worker (state=$(hq job info "$JID" --output-mode=json | jq -r '.[0].info.task_stats // empty'))" >&2
+  exit 1
+fi
+WORKER_HOST=$(hq worker list --output-mode=json | jq -r --argjson w "$WORKER_ID" '.[] | select(.id == $w) | .configuration.hostname')
+case "$WORKER_HOST" in
+  Lexies-*) WORKER=lexie;;
+  Dereks-*) WORKER=derek;;
+  Amelias*) WORKER=amelia;;
+  "") echo "no hostname found for worker id $WORKER_ID" >&2; exit 1;;
+  *) WORKER="$WORKER_HOST";;
+esac
+
+EXT=$([[ "$STREAM" == "stderr" ]] && echo "err" || echo "out")
+REMOTE_FILE="/tmp/hq-job-${JID}.${EXT}"
+LOCAL_FILE="/tmp/hq-job-${JID}.${EXT}.local"
+
+if scp -q "$WORKER:$REMOTE_FILE" "$LOCAL_FILE" 2>/dev/null; then
+  cat "$LOCAL_FILE"
+else
+  echo "(no $STREAM file on $WORKER:$REMOTE_FILE)" >&2
+fi
+
+# If stdout requested, also peek at stderr if non-empty.
+if [[ "$STREAM" == "stdout" ]]; then
+  ERR_LOCAL="/tmp/hq-job-${JID}.err.local"
+  if scp -q "$WORKER:/tmp/hq-job-${JID}.err" "$ERR_LOCAL" 2>/dev/null && [[ -s "$ERR_LOCAL" ]]; then
+    echo
+    echo "=== stderr ==="
+    cat "$ERR_LOCAL"
+  fi
+fi

@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# submit -- thin wrapper around `hq submit`.
+# Prints the assigned job ID on one line.
+#
+# Usage:
+#   submit [--name NAME] [--mem GB] [--mps] [--cwd DIR] -- <command...>
+#   submit -- python train.py --lr 0.01
+#
+# Notes:
+#   - CWD defaults to /tmp on the worker (Mac home doesn't exist on minis).
+#     Pass --cwd <dir> to override (must exist on the worker that runs it).
+#   - stdout/stderr go to /tmp/hq-job-<id>.{out,err} on the worker.
+#     `log <id>` fetches them back.
+set -euo pipefail
+
+NAME=""
+MEM=""
+MPS=0
+CWD="/tmp"
+ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --name) NAME="$2"; shift 2;;
+    --mem)  MEM="$2";  shift 2;;
+    --mps)  MPS=1;     shift;;
+    --cwd)  CWD="$2";  shift 2;;
+    --) shift; ARGS=("$@"); break;;
+    *) ARGS=("$@"); break;;
+  esac
+done
+
+if [[ ${#ARGS[@]} -eq 0 ]]; then
+  echo "usage: submit [--name X] [--mem N] [--mps] [--cwd DIR] -- <command...>" >&2
+  exit 64
+fi
+
+HQ_ARGS=(--output-mode=json --cwd "$CWD"
+         --stdout=/tmp/hq-job-%{JOB_ID}.out
+         --stderr=/tmp/hq-job-%{JOB_ID}.err)
+[[ -n "$NAME" ]] && HQ_ARGS+=(--name "$NAME")
+[[ -n "$MEM"  ]] && HQ_ARGS+=(--resource "mem=$MEM")
+[[ $MPS -eq 1 ]] && HQ_ARGS+=(--resource "mps=1")
+
+hq submit "${HQ_ARGS[@]}" -- "${ARGS[@]}" | jq -r '.id'

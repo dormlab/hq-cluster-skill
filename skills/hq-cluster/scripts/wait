@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# wait -- block until one or more jobs finish. Exit 0 iff all finished
+# successfully; otherwise exit 1 (single arg: exit code of that job).
+#
+# Usage:
+#   wait <id>            (blocks; exit = job's exit code)
+#   wait <id1> <id2> ... (blocks for all; exit 0 iff all ok)
+set -euo pipefail
+
+if [[ $# -eq 0 ]]; then
+  echo "usage: wait <job_id> [<job_id> ...]" >&2
+  exit 64
+fi
+
+POLL=${POLL_INTERVAL:-5}
+FAIL=0
+for JID in "$@"; do
+  while true; do
+    STATE=$(hq job "$JID" --output-mode=json 2>/dev/null | jq -r '.[0].info.state' 2>/dev/null || echo "UNKNOWN")
+    case "$STATE" in
+      FINISHED) break;;
+      FAILED|CANCELED) FAIL=1; break;;
+      WAITING|RUNNING|OPENED) sleep "$POLL";;
+      *) sleep "$POLL";;
+    esac
+  done
+done
+
+# If a single job, return its actual exit code (FINISHED=0, else 1).
+if [[ $# -eq 1 ]]; then
+  RAW=$(hq job "$1" --output-mode=json 2>/dev/null | jq -r '.[0].tasks[0].state' 2>/dev/null || echo "")
+  [[ "$RAW" == "FAILED" ]] && exit 1
+  exit 0
+fi
+
+exit $FAIL
