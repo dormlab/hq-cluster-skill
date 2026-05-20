@@ -9,7 +9,7 @@ set -euo pipefail
 if [[ "${1:-}" == "--name" ]]; then
   PAT="${2:-}"
   [[ -z "$PAT" ]] && { echo "usage: cancel --name <prefix>" >&2; exit 64; }
-  IDS=$(hq jobs --output-mode=json 2>/dev/null \
+  IDS=$(hq job list --output-mode=json 2>/dev/null \
         | jq -r --arg p "$PAT" '.[] | select(.name | startswith($p)) | select(.info.state == "WAITING" or .info.state == "RUNNING") | .id')
   if [[ -z "$IDS" ]]; then
     echo "no jobs matching prefix '$PAT'"

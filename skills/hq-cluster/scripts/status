@@ -7,7 +7,7 @@
 set -euo pipefail
 
 if [[ "${1:-}" == "--json" ]]; then
-  hq jobs --output-mode=json
+  hq job list --output-mode=json
   exit 0
 fi
 
@@ -20,7 +20,7 @@ echo
 
 # Jobs
 echo "JOBS (last 20)"
-JOBS=$(hq jobs --output-mode=json 2>/dev/null | jq '. | sort_by(-.id) | .[:20]')
+JOBS=$(hq job list --output-mode=json 2>/dev/null | jq '. | sort_by(-.id) | .[:20]')
 if [[ -z "$JOBS" || "$JOBS" == "[]" ]]; then
   echo "  (none)"
 else
@@ -30,5 +30,5 @@ echo
 
 # Counts
 echo "SUMMARY"
-hq jobs --output-mode=json 2>/dev/null \
+hq job list --output-mode=json 2>/dev/null \
   | jq -r '"  queued: \([.[] | select(.info.state == "WAITING")] | length)   running: \([.[] | select(.info.state == "RUNNING")] | length)   done: \([.[] | select(.info.state == "FINISHED")] | length)   failed: \([.[] | select(.info.state == "FAILED")] | length)"'
